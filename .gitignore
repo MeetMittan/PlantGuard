@@ -1,0 +1,34 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+dist-e2e/
+dist-*/
+.netlify/
+.wrangler/
+dev-dist/
+*.tsbuildinfo
+
+# Environment — commit .env.example only
+.env
+.env.*
+!.env.example
+
+# Local model cache used by scripts/verify-model-inference.mjs
+.model-cache/
+
+# Test artifacts
+coverage/
+playwright-report/
+test-results/
+test-results-*/
+blob-report/
+
+# Editors / OS
+.DS_Store
+Thumbs.db
+*.log
+.vscode/*
+!.vscode/extensions.json
+.idea/

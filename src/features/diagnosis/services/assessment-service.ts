@@ -1,0 +1,249 @@
+import type { InferenceResult } from '@/ai/contracts/types';
+import {
+  formatAnswers,
+  isEchoOfExamples,
+  isNoneAnswer,
+  parseConditionName,
+  parseHealth,
+  parsePlantName,
+  parseSigns,
+  parseYesNo,
+  type AnswerSet,
+} from '@/ai/utils/parse-answers';
+import { evaluateQuality, type QualityMetrics } from '@/services/image-processing/quality';
+import { createId } from '@/lib/utils';
+import { causeTemplatesFor, referencesForCondition, templateForCondition } from '../references/references';
+import {
+  AI_DISCLAIMER,
+  ASSESSMENT_SCHEMA_VERSION,
+  plantAssessmentSchema,
+  type AssessmentStatus,
+  type PlantAssessment,
+  type PossibleCause,
+  type VisibleFinding,
+} from '../schemas/assessment';
+import { isAbnormal, normalizeSymptoms, symptomLabel, type SymptomCode } from '../symptoms';
+import { recommendationsFor } from './recommendations';
+
+/**
+ * Assessment service: turns raw model answers + local photo-quality metrics
+ * into a validated, application-owned PlantAssessment.
+ *
+ * Pipeline (docs/ASSESSMENT_SCHEMA.md):
+ *   1. photo suitability (pixel heuristic + "is this a plant?")
+ *   2. plant identification (model suggestion only)
+ *   3. visible findings, normalized to the symptom taxonomy
+ *   4. possible causes: the model's suggestion + curated causes linked to the tags
+ *   5. validation (Zod) — failures throw; partial answers are flagged, not hidden
+ *   6. references from the offline library (deterministic matching only)
+ *   7. curated recommendations
+ */
+
+export class AssessmentValidationError extends Error {
+  constructor(public readonly issues: string[]) {
+    super(`Assessment failed validation: ${issues.join('; ')}`);
+    this.name = 'AssessmentValidationError';
+  }
+}
+
+export const STANDARD_LIMITATIONS = [
+  'Generated on your device by a small general-purpose vision-language model that was not trained specifically on plant diseases.',
+  'The model reports no measured certainty; nothing here is a probability.',
+  'Many different problems (water, light, nutrients, pests, disease) can look alike in a single photo.',
+];
+
+const MODEL_CAUSE_UNCERTAINTY =
+  'Named by the on-device model. Small general-purpose models often name the wrong condition, and nothing else has confirmed it.';
+const LIBRARY_CAUSE_UNCERTAINTY =
+  'Listed because of the recorded symptom tags, not because the model identified it. Several causes can produce the same symptoms.';
+
+function categoryFor(name: string): PossibleCause['category'] {
+  const text = name.toLowerCase();
+  if (/(aphid|insect|pest|mite|caterpillar|beetle|thrips|whitefly|slug|snail|scale|mealybug)/.test(text)) return 'pest';
+  if (/(deficien|nutrient|chlorosis|nitrogen|iron|magnesium)/.test(text)) return 'nutrient';
+  if (/(water|drought|sun|scorch|burn|heat|cold|frost|light|salt)/.test(text)) return 'environmental';
+  if (/(mildew|blight|spot|rot|rust|virus|viral|mosaic|fung|bacteri|wilt|anthracnose|mold|mould|fusarium|septoria|alternaria)/.test(text)) return 'disease';
+  if (/(damage|tear|hail|wind)/.test(text)) return 'mechanical';
+  return 'unknown';
+}
+
+export interface BuildAssessmentInput {
+  inference: InferenceResult;
+  quality: QualityMetrics | null;
+  id?: string;
+  observationId?: string | null;
+  now?: Date;
+}
+
+export function buildAssessment({ inference, quality, id, observationId = null, now = new Date() }: BuildAssessmentInput): PlantAssessment {
+  const answers: AnswerSet = inference.answers;
+  const issues: string[] = [];
+  let partial = false;
+
+  for (const [step, answer] of Object.entries(answers)) {
+    if (answer?.truncated) {
+      issues.push(`The "${step}" answer reached the length limit and may be cut off.`);
+      partial = true;
+    }
+  }
+
+  // 1. Suitability
+  const photo = evaluateQuality(quality);
+  const isPlant = answers.isPlant ? parseYesNo(answers.isPlant.text) : null;
+  if (answers.isPlant && isPlant === null) {
+    issues.push('The model did not clearly confirm that the photo shows a plant.');
+    partial = true;
+  }
+
+  // 2. Identification (suggestion only)
+  const plant = answers.plant ? parsePlantName(answers.plant.text) : { value: null, warning: null };
+  if (plant.warning) issues.push(plant.warning);
+
+  // 3. Findings
+  const health = answers.health ? parseHealth(answers.health.text) : null;
+  if (answers.health && health === null) {
+    issues.push('The model’s health answer could not be interpreted.');
+    partial = true;
+  }
+  let signPhrases: string[] = [];
+  let signsUnusable = false;
+  if (answers.signs) {
+    if (isEchoOfExamples(answers.signs.text)) {
+      issues.push('The model repeated the example symptoms from the question, so its list of visible signs was not used.');
+      signsUnusable = true;
+      partial = true;
+    } else {
+      signPhrases = parseSigns(answers.signs.text);
+    }
+  }
+  const normalized = normalizeSymptoms(signPhrases);
+  const findings: VisibleFinding[] = normalized.map(({ code, phrases }) => ({
+    code,
+    label: symptomLabel(code),
+    description: phrases.join('; ').slice(0, 300),
+    evidence: `The model described seeing: “${phrases.join('”, “')}”.`.slice(0, 300),
+    caveat: code === 'other' ? 'Could not be matched to a known symptom category.' : null,
+  }));
+  const abnormalCodes = findings.map((f) => f.code).filter(isAbnormal);
+
+  if (isPlant !== 'no') {
+    if (signsUnusable || (answers.signs && !signPhrases.length && !isNoneAnswer(answers.signs.text))) {
+      findings.push({
+        code: 'uncertain',
+        label: symptomLabel('uncertain'),
+        description: 'The model’s description of visible signs could not be used.',
+        evidence: 'No usable description was produced.',
+        caveat: null,
+      });
+    } else if (!abnormalCodes.length && answers.signs && isNoneAnswer(answers.signs.text)) {
+      findings.push({
+        code: 'no_obvious_symptoms',
+        label: symptomLabel('no_obvious_symptoms'),
+        description: 'The model reported no visible symptoms.',
+        evidence: `The model answered: “${answers.signs.text.trim()}”.`,
+        caveat: 'Small symptoms, the underside of leaves and other parts of the plant may not be visible in one photo.',
+      });
+    }
+  }
+
+  // Overall status
+  const qualityProblem = photo.verdict !== 'suitable' && photo.verdict !== 'unknown';
+  let status: AssessmentStatus;
+  if (isPlant === 'no') status = 'not_a_plant';
+  else if (health === 'diseased' || abnormalCodes.length) status = 'possible_issue';
+  else if (qualityProblem) status = 'image_quality_issue';
+  else if (health === 'healthy') status = 'no_obvious_symptoms';
+  else status = 'insufficient_evidence';
+  if (health === 'healthy' && abnormalCodes.length) {
+    issues.push('The model called the leaf healthy but also described symptoms; treat this result with extra caution.');
+  }
+
+  // 4. Possible causes
+  const causes: PossibleCause[] = [];
+  if (status === 'possible_issue' && answers.condition) {
+    const condition = parseConditionName(answers.condition.text);
+    if (condition.warning) issues.push(condition.warning);
+    if (condition.value) {
+      const refs = referencesForCondition(condition.value).slice(0, 3);
+      const template = templateForCondition(condition.value);
+      causes.push({
+        id: 'model-suggestion',
+        name: condition.value.slice(0, 120),
+        category: categoryFor(condition.value),
+        origin: 'model-suggestion',
+        rationale: abnormalCodes.length
+          ? `Suggested by the on-device model for the visible signs (${abnormalCodes.map(symptomLabel).join(', ').toLowerCase()}).`
+          : 'Suggested by the on-device model.',
+        supportingFindings: abnormalCodes,
+        uncertainty: MODEL_CAUSE_UNCERTAINTY,
+        distinguishingChecks: template?.distinguishingChecks ?? ['Compare with photos in trusted guides, or ask a local expert to look at the plant.'],
+        referenceIds: refs.map((ref) => ref.id),
+      });
+    }
+  }
+  if (status === 'possible_issue' && abnormalCodes.length) {
+    for (const { template, matched } of causeTemplatesFor(abnormalCodes, 4 - causes.length)) {
+      if (causes.some((cause) => cause.name.toLowerCase() === template.name.toLowerCase())) continue;
+      causes.push({
+        id: template.key,
+        name: template.name,
+        category: template.category,
+        origin: 'reference-library',
+        rationale: `A general cause associated with ${matched.map(symptomLabel).join(' and ').toLowerCase()} in the PlantGuard reference library.`,
+        supportingFindings: matched,
+        uncertainty: LIBRARY_CAUSE_UNCERTAINTY,
+        distinguishingChecks: template.distinguishingChecks,
+        referenceIds: template.referenceIds,
+      });
+    }
+  }
+
+  const findingCodes: SymptomCode[] = findings.map((f) => f.code);
+  const limitations = [AI_DISCLAIMER, ...STANDARD_LIMITATIONS];
+  if (qualityProblem) limitations.unshift(`Photo quality check (heuristic): ${photo.issues.join(' ')}`);
+
+  const assessment: PlantAssessment = {
+    id: id ?? createId(),
+    observationId,
+    assessmentSchemaVersion: ASSESSMENT_SCHEMA_VERSION,
+    status: partial ? 'partial' : 'complete',
+    overallAssessment: status,
+    photoQuality: {
+      verdict: photo.verdict,
+      issues: photo.issues,
+      metrics: quality,
+      method: 'pixel-heuristic',
+    },
+    plantIdentification: {
+      suggestedCommonName: status === 'not_a_plant' ? null : plant.value,
+      suggestedScientificName: null,
+      alternatives: [],
+      status: plant.value && status !== 'not_a_plant' ? 'model-suggested' : 'unknown',
+      uncertaintyNote: plant.value
+        ? 'A guess by a small general-purpose model. It is often wrong — confirm or correct it if you know the plant.'
+        : 'The model could not suggest a plant name.',
+    },
+    visibleFindings: findings.slice(0, 12),
+    possibleCauses: causes.slice(0, 4),
+    recommendations: recommendationsFor(status, findingCodes),
+    referenceIds: [...new Set(causes.flatMap((cause) => cause.referenceIds))],
+    guidanceSource: 'plantguard-curated',
+    limitations: limitations.slice(0, 8),
+    validationIssues: issues.slice(0, 12),
+    modelAnswers: formatAnswers(answers),
+    modelId: inference.modelId,
+    modelRevision: inference.modelRevision,
+    promptVersion: inference.promptVersion,
+    provider: inference.provider,
+    runtimeInfo: { device: inference.device },
+    createdAt: now.toISOString(),
+    inferenceDurationMs: inference.inferenceMs,
+  };
+
+  // 5. Validate our own output: a bug or unexpected answer must surface as an error, never as a bad record.
+  const result = plantAssessmentSchema.safeParse(assessment);
+  if (!result.success) {
+    throw new AssessmentValidationError(result.error.issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`));
+  }
+  return result.data;
+}

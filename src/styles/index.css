@@ -1,0 +1,182 @@
+@import 'tailwindcss';
+@import '@fontsource-variable/inter';
+@import '@fontsource-variable/fraunces';
+
+/* Dark mode is class-driven so the user's theme preference can override the OS. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+ * Design tokens. Components use these semantic names (bg-surface, text-ink,
+ * border-line, bg-forest …) instead of raw colour values.
+ */
+@theme {
+  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-display: 'Fraunces Variable', ui-serif, Georgia, serif;
+
+  --color-canvas: var(--pg-canvas);
+  --color-surface: var(--pg-surface);
+  --color-surface-muted: var(--pg-surface-muted);
+  --color-surface-raised: var(--pg-surface-raised);
+  --color-line: var(--pg-line);
+  --color-line-strong: var(--pg-line-strong);
+  --color-ink: var(--pg-ink);
+  --color-ink-muted: var(--pg-ink-muted);
+  --color-ink-subtle: var(--pg-ink-subtle);
+  --color-forest: var(--pg-forest);
+  --color-forest-strong: var(--pg-forest-strong);
+  --color-forest-soft: var(--pg-forest-soft);
+  --color-on-forest: var(--pg-on-forest);
+  --color-moss: var(--pg-moss);
+  --color-sun: var(--pg-sun);
+  --color-sun-soft: var(--pg-sun-soft);
+  --color-clay: var(--pg-clay);
+  --color-clay-soft: var(--pg-clay-soft);
+  --color-sky: var(--pg-sky);
+  --color-sky-soft: var(--pg-sky-soft);
+  --color-focus: var(--pg-focus);
+  --color-chart-mark: var(--pg-chart-mark);
+
+  --radius-card: 1.25rem;
+  --shadow-card: 0 1px 2px rgb(31 41 30 / 0.04), 0 12px 32px -18px rgb(31 41 30 / 0.22);
+  --shadow-float: 0 18px 40px -16px rgb(20 40 28 / 0.45);
+
+  --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+:root {
+  --pg-canvas: #f6f3ea;
+  --pg-surface: #fffdf8;
+  --pg-surface-muted: #efeadc;
+  --pg-surface-raised: #ffffff;
+  --pg-line: #e2dccb;
+  --pg-line-strong: #c9c0a8;
+  --pg-ink: #1d2a22;
+  --pg-ink-muted: #4b5a50;
+  --pg-ink-subtle: #6b766d;
+  --pg-forest: #1f4d36;
+  --pg-forest-strong: #163a28;
+  --pg-forest-soft: #dfeadf;
+  --pg-on-forest: #f7f4ec;
+  --pg-moss: #6f8f3a;
+  --pg-sun: #8a5a00;
+  --pg-sun-soft: #fbefd2;
+  --pg-clay: #9c3d24;
+  --pg-clay-soft: #f8e1d8;
+  --pg-sky: #285e7a;
+  --pg-sky-soft: #dcebf2;
+  --pg-focus: #2f7d55;
+  /* Chart mark colours validated with the dataviz palette checker (band, chroma, 3:1 contrast). */
+  --pg-chart-mark: #2f8a57;
+  color-scheme: light;
+}
+
+.dark {
+  --pg-canvas: #0f1612;
+  --pg-surface: #16201a;
+  --pg-surface-muted: #1d2922;
+  --pg-surface-raised: #1f2c24;
+  --pg-line: #2b3a31;
+  --pg-line-strong: #3d5044;
+  --pg-ink: #eef1e9;
+  --pg-ink-muted: #b8c4b9;
+  --pg-ink-subtle: #93a197;
+  --pg-forest: #7fc79a;
+  --pg-forest-strong: #a2dbb6;
+  --pg-forest-soft: #1f3a2b;
+  --pg-on-forest: #0f1612;
+  --pg-moss: #a8c66c;
+  --pg-sun: #f0c46a;
+  --pg-sun-soft: #3a2f17;
+  --pg-clay: #f0a084;
+  --pg-clay-soft: #3c231b;
+  --pg-sky: #8cc4e0;
+  --pg-sky-soft: #183140;
+  --pg-focus: #8fd6a8;
+  --pg-chart-mark: #44a86e;
+  color-scheme: dark;
+}
+
+@layer base {
+  html {
+    -webkit-tap-highlight-color: transparent;
+    text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-canvas text-ink font-sans antialiased;
+    min-height: 100dvh;
+  }
+  h1,
+  h2,
+  h3 {
+    @apply font-display tracking-tight;
+    font-optical-sizing: auto;
+  }
+  :focus-visible {
+    outline: 3px solid var(--pg-focus);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+  ::selection {
+    background: var(--pg-forest-soft);
+  }
+  dialog::backdrop {
+    background: rgb(10 20 14 / 0.55);
+    backdrop-filter: blur(2px);
+  }
+}
+
+@layer utilities {
+  .pb-safe {
+    padding-bottom: max(env(safe-area-inset-bottom), 0px);
+  }
+  .botanical-grain {
+    background-image:
+      radial-gradient(circle at 15% 10%, rgb(111 143 58 / 0.12), transparent 40%),
+      radial-gradient(circle at 85% 0%, rgb(31 77 54 / 0.14), transparent 45%);
+  }
+}
+
+@keyframes pg-dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes pg-indeterminate {
+  0% {
+    left: -35%;
+  }
+  100% {
+    left: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Leaflet: keep controls and attribution readable in both themes. */
+.leaflet-container {
+  font: inherit;
+  background: var(--pg-surface-muted);
+}
+.dark .leaflet-control-attribution,
+.dark .leaflet-bar a {
+  background: rgb(22 32 26 / 0.92);
+  color: var(--pg-ink);
+}
+.dark .leaflet-control-attribution a {
+  color: var(--pg-forest);
+}
