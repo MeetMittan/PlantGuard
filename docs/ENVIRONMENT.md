@@ -13,24 +13,37 @@ stop the app with an explicit "PlantGuard could not start" message listing the p
 choices made by users (model preset, CPU/GPU, theme, daily goal, photo/location defaults) are in
 the Settings screen and stored in IndexedDB.
 
+### Frontend Client Variables (`.env`)
+
 | Variable | Default | Required | Purpose |
 |---|---|---|---|
 | `VITE_APP_NAME` | `PlantGuard AI` | No | Name in the UI and PWA manifest. |
 | `VITE_DEFAULT_LOCALE` | `en-IN` | No | BCP 47 locale for dates/numbers. Validated with `Intl`. |
 | `VITE_BASE_PATH` | `/` | No | Sub-path the app is served from (e.g. `/plantguard-ai/` for GitHub Pages). Used for asset URLs, router basename, manifest `start_url`/`scope`. |
-| `VITE_AI_PROVIDER` | `transformersjs` | No | `transformersjs` = real on-device inference. `demo` = simulated results (tests/demos only). |
+| `VITE_AI_PROVIDER` | `gemini` | No | `gemini` = server-backed Google Gemini API (recommended). `demo` = mock provider. `transformersjs` = legacy on-device model. |
+| `VITE_API_BASE_URL` | *(empty → `/api` proxy)* | No | Base URL for the Express API. In production, set to your backend origin (e.g. `https://api.plantguard.example.com`). Leave empty in local dev to use Vite proxy. |
 | `VITE_ENABLE_DEMO_MODE` | `false` | Only with `demo` | Must be `true` for `VITE_AI_PROVIDER=demo`; a persistent banner marks demo builds. |
-| `VITE_AI_MODEL_ID` | *(empty → presets)* | No | Force a custom SmolVLM/Idefics3-compatible ONNX repo. Hides the preset picker. |
-| `VITE_AI_MODEL_REVISION` | preset's pinned commit, or `main` for custom ids | No | Git revision of the model repo. Pin to a commit hash for reproducible caching. |
-| `VITE_AI_MODEL_DTYPE` | `embed_tokens=q8,vision_encoder=q4,decoder_model_merged=q4` | No | Quantization per ONNX component, or one dtype for all (`fp32 fp16 q8 int8 uint8 q4 bnb4 q4f16`). |
-| `VITE_AI_MAX_IMAGE_DIMENSION` | `768` | No | Longest edge (px, 256–2048) for stored/analysed photos. |
-| `VITE_AI_MAX_NEW_TOKENS` | `160` | No | Global cap on generated tokens per answer (32–512). Per-question limits are smaller. |
-| `VITE_AI_REMOTE_HOST` | `https://huggingface.co/` | No | Host serving model files with the Hub URL layout (e.g. a self-hosted mirror). |
-| `VITE_AI_WASM_BASE_URL` | *(empty → jsDelivr, version-pinned)* | No | Folder hosting `ort-wasm-simd-threaded.asyncify.{mjs,wasm}` from `node_modules/onnxruntime-web/dist`. Needs a host allowing ~26 MB files. |
+| `VITE_AI_MAX_IMAGE_DIMENSION` | `768` | No | Longest edge (px, 256–2048) for client-side preprocessed/uploaded photos. |
+| `VITE_AI_MAX_NEW_TOKENS` | `160` | No | Cap on generated tokens per answer (used for local models). |
 | `VITE_MAP_TILE_URL` | `https://tile.openstreetmap.org/{z}/{x}/{y}.png` | No | Raster tile URL template. |
 | `VITE_MAP_ATTRIBUTION` | OSM attribution (default URL only) | **Yes** if `VITE_MAP_TILE_URL` is changed | Visible map attribution (HTML links allowed). |
 | `VITE_MAP_MAX_ZOOM` | `19` | No | Max zoom (capped at 19 for the OSM service). |
 | `VITE_ENABLE_GEOLOCATION` | `true` | No | `false` hides all location features. |
+
+### Backend Server Variables (`server/.env`)
+
+These variables are **private server secrets** loaded by the Express backend. Never expose these to Vite or the browser!
+
+| Variable | Default | Required | Purpose |
+|---|---|---|---|
+| `PORT` | `3001` | No | Port on which the Express backend server listens. |
+| `GEMINI_API_KEY` | *(none)* | **Yes** for online scans | Google Gemini API key from [Google AI Studio](https://aistudio.google.dev/). |
+| `GEMINI_MODEL` | `gemini-3.8-flash` | No | Gemini multimodal model identifier (e.g. `gemini-3.8-flash`, `gemini-2.0-flash`). |
+| `CLIENT_ORIGIN` | `http://localhost:5173` | No | Allowed CORS origin(s), comma-separated. Set to your production frontend domain. |
+| `RATE_LIMIT_MAX` | `30` | No | Maximum requests per IP window. |
+| `RATE_LIMIT_WINDOW_MS` | `900000` (15m) | No | Time window in milliseconds for rate limiting. |
+| `MAX_UPLOAD_MB` | `10` | No | Maximum uploaded image size limit in MB (enforced by Multer). |
+| `REQUEST_TIMEOUT_MS` | `30000` (30s) | No | Request timeout for outbound Gemini API calls. |
 
 `npm run verify:model` checks the effective model configuration against the Hugging Face Hub
 (repo exists, not gated, Idefics3/SmolVLM architecture, every ONNX file for the dtype map exists,

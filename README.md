@@ -1,66 +1,46 @@
 # PlantGuard AI 🌿
 
-**An offline-first plant & leaf health journal with on-device AI.** Photograph a leaf, run an
-open-weight vision-language model **locally in your browser**, review a cautious assessment, save
-the observation and keep a daily plant-care streak — on a trail with no signal, too.
+**An offline-first plant & leaf health journal with secure Google Gemini AI analysis.**
+Photograph a leaf, get high-accuracy plant health assessments powered by **Google Gemini API** via a lightweight **Node.js Express backend**, review cautious observations with actionable care guidance, and manage your daily plant-care streak — with full offline journal capabilities when away from signal.
 
-- 🔒 **Private:** photos never leave the device. No account, no backend, no analytics.
-- 📴 **Offline-first:** after verified app/model/runtime caching, the app and saved data work offline. Verify a local offline scan on your device.
-- 🤝 **Honest AI:** results are framed as estimates with visible signs, possible causes and
-  limitations — never fabricated diagnoses or confidence scores.
-- 💸 **Free to run:** static hosting; no paid AI, database, map or notification service required.
-
-> ⚠️ The bundled models (SmolVLM 500M/256M) are **general-purpose** vision-language models, not
-> trained on plant diseases. They describe visible symptoms reasonably well but often get plant and
-> disease names wrong. See [docs/AI_MODEL.md](docs/AI_MODEL.md#measured-behaviour-honest-results).
-
-## Screenshots
-
-Captured from the demo build (`VITE_AI_PROVIDER=demo`), which simulates AI results for screenshots and tests:
-
-| Dashboard (desktop) | Scan result (mobile) | Care & streaks (mobile, dark) |
-|---|---|---|
-| ![Dashboard](docs/screenshots/dashboard-desktop.png) | ![Scan result](docs/screenshots/scan-result-mobile.png) | ![Care](docs/screenshots/care-mobile-dark.png) |
+- 🔒 **Private & Secure:** `GEMINI_API_KEY` stays strictly on the server and is never exposed to the client or browser bundles. Photos are only transmitted when you explicitly tap "Analyse with Gemini AI". No GPS coordinates or unrelated journal data are sent to AI.
+- ⚡ **Lightweight & Battery-Friendly:** Eliminates heavy client-side ONNX/SmolVLM models (0 MB download on user devices in default Gemini mode), preventing mobile browser hangs, RAM saturation, and thermal throttling.
+- 📴 **Offline-First Journal:** Observations, plants, garden timelines, care tasks, streaks, and map spots are stored locally in IndexedDB. Save photos instantly while offline; analyse them whenever you return online.
+- 🤝 **Honest AI:** Results are framed cautiously with visible symptoms, possible causes, limitations, and practical low-risk care steps — never fabricated certainty or guaranteed cures.
+- 🔄 **Modular Provider Architecture:** Supports `gemini` (production default via Express), `demo` (deterministic mock for CI/E2E), and `transformersjs` (legacy on-device SmolVLM).
 
 ## Features
 
-- **Dashboard** — greeting, model/offline status, scan shortcut, observation & streak stats,
-  weekly activity chart, today's checklist, recent scans. All numbers come from stored data.
-- **Scanner** — live camera (getUserMedia) or photo picker, preview & retake, quality hints,
-  optional name/context, on-device analysis with step progress and cancel, structured result,
-  save (photo and location optional) or save without analysis.
-- **History** — list/grid, search, condition and date filters, sorting, incremental loading,
-  detail view with notes editing, delete with confirmation.
-- **My Garden** — plants with species, cover photo, care preferences, linked observations,
-  in-app watering/check-up reminders, archive/delete.
-- **Care & streaks** — daily goal, typed tasks, idempotent completion, current/best streak,
-  calendar, weekly summary, milestone celebrations. Rules: [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md#care-streaks).
-- **Nature Explorer** — Leaflet map with saved places and observation points, user-initiated
-  location, list + detail panel, works as a list offline, visible OSM attribution.
-- **Settings** — theme, model choice (500M / 256M lite), GPU/CPU, model download/delete,
-  verified offline readiness, storage usage, permissions guidance, validated ZIP/JSON
-  backup & import, clear history / all data, privacy and licences.
+- **Dashboard** — greeting, model/service status, scan shortcut, observation & streak stats, weekly activity chart, today's checklist, recent scans. All numbers come from stored data.
+- **Scanner** — live camera (`getUserMedia`) or photo picker, preview & retake, client-side resizing & compression, optional observation note, secure Gemini analysis with multi-step progress and cancel, structured result, save (photo and location optional) or save without analysis.
+- **History** — list/grid, search, condition and date filters, sorting, incremental loading, detail view with notes editing, delete with confirmation.
+- **My Garden** — plants with species, cover photo, care preferences, linked observations, in-app watering/check-up reminders, archive/delete.
+- **Care & streaks** — daily goal, typed tasks, idempotent completion, current/best streak, calendar, weekly summary, milestone celebrations.
+- **Nature Explorer** — Leaflet map with saved places and observation points, user-initiated location, list + detail panel, works as a list offline, visible OSM attribution.
+- **Settings** — theme, AI backend readiness, storage usage, permissions guidance, validated ZIP/JSON backup & import, clear history / all data, privacy disclosures.
 - **PWA** — installable, precached app shell, update prompt, offline navigation.
-
-## Requirements
-
-- Node.js **≥ 20.19** (22 or 24 recommended; `npm run verify:model` needs ≥ 22.18) and npm.
-- A recent browser with Workers, WebAssembly, Cache API and IndexedDB. Chromium desktop is the automated verification target; physical phones, Firefox and Safari still require device checks. HTTPS (or `localhost`) for camera, storage and
-  the service worker. WebGPU is optional.
-- For AI: ≈200–350 MB free storage and ~1–1.5 GB free memory (default model).
 
 ## Getting started
 
+### 1. Configure Backend (.env)
 ```bash
-git clone <your-fork-url> plantguard-ai
-cd plantguard-ai
-npm ci                      # npm install also works
-cp .env.example .env        # optional — every variable has a safe default
-npm run dev                 # http://localhost:5173
+cd server
+cp .env.example .env
+# Edit server/.env and provide your GEMINI_API_KEY from Google AI Studio
+# Default model: gemini-3.8-flash (or gemini-2.0-flash)
+npm install
+npm run dev      # Starts Express backend on http://localhost:3001
 ```
 
-Open the app, complete onboarding, then **Settings → AI model → Download AI model**. The model is
-never downloaded automatically.
+### 2. Configure & Start Frontend
+In a separate terminal from project root:
+```bash
+npm install
+cp .env.example .env    # Optional (defaults connect to http://localhost:3001/api)
+npm run dev             # Starts Vite frontend on http://localhost:5173
+```
+
+Open http://localhost:5173, complete onboarding, and start journaling or scanning leaves!
 
 > The service worker is only active in production builds. To test PWA/offline behaviour:
 > `npm run build && npm run preview` → http://localhost:4173
@@ -69,32 +49,33 @@ never downloaded automatically.
 
 | Command | Purpose |
 |---|---|
-| `npm run dev` | Development server |
+| `npm run dev` | Development Vite frontend server (`http://localhost:5173`) |
 | `npm run build` | Type-check + production build into `dist/` |
 | `npm run preview` | Serve the production build locally |
-| `npm run lint` / `npm run typecheck` | ESLint / TypeScript |
+| `npm run lint` / `npm run typecheck` | ESLint / TypeScript checking for frontend |
 | `npm test` | Unit + component tests (Vitest) |
-| `npm run test:e2e` | Playwright E2E (first run: `npx playwright install chromium`) |
-| `npm run check` | lint + typecheck + test + build |
-| `npm run verify:model` | Check model ids, revisions and ONNX files on the Hub (no download) |
-| `npm run verify:inference` | Real model inference in Node on the test fixture (downloads ≈350 MB once) |
-| `npm run test:real-browser` | Real Chromium worker inference, cold offline reload and cache eviction (run verify:inference first) |
+| `npm run check` | Run full lint + typecheck + test + build pipeline |
+| `npm run server:dev` | Start Express backend in watch mode (`http://localhost:3001`) |
+| `npm run server:build` | Compile Express backend TypeScript to `server/dist/` |
+| `npm run server:start` | Run compiled Express backend in production mode |
+| `npm run server:typecheck` | Type-check server code (`tsc --noEmit`) |
+| `npm run server:test` | Run server unit & API route tests (Vitest) |
+| `npm run test:e2e` | Playwright E2E tests |
 | `npm run icons` | Regenerate PWA icons |
 
 Details: [docs/TESTING.md](docs/TESTING.md).
 
 ## Configuration
 
-All configuration is optional, public and build-time (`VITE_*`). Never put secrets in it.
-See [`.env.example`](.env.example) and [docs/ENVIRONMENT.md](docs/ENVIRONMENT.md).
+- **Frontend configuration:** Optional, public and build-time (`VITE_*`). Stored in root `.env`. Never put API keys here.
+- **Backend configuration:** Server secrets stored in `server/.env` (git-ignored). Contains `GEMINI_API_KEY`, `GEMINI_MODEL`, `PORT`, and `CLIENT_ORIGIN`.
+See [docs/ENVIRONMENT.md](docs/ENVIRONMENT.md).
 
-## The AI model
+## The AI Architecture
 
-- Default **SmolVLM-500M-Instruct** (≈346 MB, Apache-2.0); lite **SmolVLM-256M-Instruct**
-  (≈182 MB). Pinned revisions, q8/q4 ONNX weights, run with Transformers.js 4 in a Web Worker
-  (WebGPU when available, otherwise WebAssembly).
-- PaliGemma 2 was evaluated first and rejected for this use (≥2.3 GB, not instruction-tuned).
-- Readiness is verified file-by-file in the browser cache before "offline ready" is shown.
+- **Primary Provider (`gemini`):** Routes requests to Google Gemini multimodal vision models (`gemini-3.8-flash`, `gemini-2.0-flash`) via the Express backend. Delivers fast, accurate plant health analysis with structured schema extraction while protecting device battery and RAM.
+- **Demo Provider (`demo`):** Deterministic mock provider for automated tests, offline development, and CI environments without network dependencies.
+- **Legacy Provider (`transformersjs`):** On-device SmolVLM-500M / SmolVLM-256M running via Transformers.js and ONNX Web Worker (available as an optional fallback).
 
 Read [docs/AI_MODEL.md](docs/AI_MODEL.md) and [docs/AI_PROMPTS.md](docs/AI_PROMPTS.md).
 

@@ -1,75 +1,100 @@
-# Testing
+# PlantGuard AI — Testing & Verification Guide
 
-All commands run from the repository root after `npm ci`.
+PlantGuard AI uses a unified testing strategy across both workspaces using **Vitest**, **Testing Library**, **Supertest**, and **fake-indexeddb**.
 
-| What | Command | Notes |
-|---|---|---|
-| Lint | `npm run lint` | ESLint 10 + typescript-eslint + React Hooks rules. Warnings are Fast-Refresh hints only. |
-| Type check | `npm run typecheck` | `tsc -b` over app (strict) and tooling projects. |
-| Unit + component tests | `npm test` | Vitest 5 + jsdom + Testing Library + fake-indexeddb. |
-| Watch mode | `npm run test:watch` | |
-| Production build | `npm run build` | Type-checks, then `vite build` (PWA + service worker). |
-| End-to-end | `npm run test:e2e` | Playwright; builds a **demo-provider** production bundle into `dist-e2e/` and serves it with `vite preview`. First time: `npx playwright install chromium`. |
-| Everything | `npm run check` | lint → typecheck → test → build. |
-| Model config | `npm run verify:model` | Checks model ids/revisions/dtype files against the Hub (no weight download). |
-| Real inference | `npm run verify:inference` | Downloads the default preset (≈350 MB) into `.model-cache/` and runs the real prompt sequence + parser on CPU. `VERIFY_PRESET=smolvlm-256m`, `VERIFY_IMAGE=…`, `VERIFY_CONTEXT=…` are supported. Not run in CI. |
+---
 
-## What is covered
+## 1. Test Command Matrix
 
-**Unit tests**
+All commands can be executed from the repository root:
 
-- `src/app/config.test.ts` — env validation, defaults, demo-mode guard, map attribution rule.
-- `src/db/repositories/repositories.test.ts` — CRUD, search/filter/sort/pagination, stats, plant/place unlinking, idempotent care completion, unique index.
-- `src/db/migrations/migrations.test.ts` — real v1 → v2 upgrade with backfill.
-- `src/features/care/services/streaks.test.ts` — streak rules, goals, missed days, month/year/leap boundaries, DST transitions, local-vs-UTC day keys.
-- `src/services/image-processing/image-processing.test.ts` — MIME/size validation, magic-byte sniffing with real fixtures, resize math.
-- `src/services/export-import/backup.test.ts` — JSON/ZIP round trip, validation failures, newer versions, ignored ZIP entries, merge/replace, transactional rollback.
-- `src/ai/utils/parse-answers.test.ts` — answer parsing, real recorded model outputs, contradictions, echoes, truncation, not-a-plant, no dosage advice, markup as text.
-- `src/ai/utils/run-analysis.test.ts` — question sequencing, follow-up logic, context sanitising, cancellation, error propagation.
-- `src/ai/model-manager/model-manager.test.ts` — every model state transition, offline/unsupported/error/retry, eviction recovery, delete.
-- `src/services/geolocation/geolocation.test.ts`, `src/services/maps/map-provider.test.ts`.
+| Command | Workspace | Target | Framework |
+|---|---|---|---|
+| `npm run test` | Monorepo | All tests across client & server | Vitest |
+| `npm run client:test` | `client` | Client components, stores, hooks, sync | Vitest + Testing Library + jsdom |
+| `npm run server:test` | `server` | Server endpoints, auth, security, storage | Vitest + Supertest |
+| `npm run typecheck` | Monorepo | Full TypeScript verification | TypeScript (`tsc`) |
+| `npm run check` | Monorepo | Typecheck + test + build pipeline | Concurrently |
+| `npm run db:check` | `server` | MongoDB connectivity check | Mongoose ping |
 
-**Component tests** (real router + providers, IndexedDB via fake-indexeddb)
+---
 
-- Scanner: model unavailable, successful analysis + save, inference failure, invalid file, camera permission denied, camera unsupported.
-- History: empty state, ordering, condition filter, search, no-results + clear filters.
-- Observation detail: notes editing, delete confirmation (cancel and confirm).
-- App shell: desktop + mobile navigation parity, "More" menu, offline indicator, onboarding redirect.
-- Settings: clear history (model kept), cancel clear-all, delete model only after confirmation, export, import preview + merge, invalid backup.
+## 2. Server Test Suite (`server/src/test/`)
 
-Component tests replace the model provider with the explicitly simulated `DemoVisionProvider`
-through `src/test/mock-model-manager.ts`; this is test-only and production builds use the real
-Transformers.js provider unless demo mode is explicitly configured.
+Server tests use **Supertest** to test Express routes without binding to physical network ports:
 
-**End-to-end** (`tests/e2e`, Pixel 7 profile + desktop Chrome for navigation)
+### 2.1 Covered Scenarios
+- **Health Probes:** Verifies `/api/v1/health` and `/api/health` return HTTP 200 with service status.
+- **AI Diagnostics:**
+  - `GET /api/v1/ai/status` returns availability without exposing API keys.
+  - `POST /api/v1/ai/analyze` validates image payload, rejects non-image inputs with 400, and returns structured diagnosis.
+  - Simulated provider failures return proper 502/503 status codes.
+- **Authentication Flows:**
+  - Registration with Argon2id hashing.
+  - Login with valid credentials and rejection of invalid passwords.
+  - Refresh token rotation (verifying old tokens become invalidated).
+  - Logout and session clearance.
+- **Authorization & IDOR Scoping:**
+  - Verifies that requests without `Authorization: Bearer` are rejected with 401.
+  - Verifies that User A cannot read or modify User B's plants or observations (404/403).
+- **Security & Storage:**
+  - File upload MIME validation (rejects `.exe`, `.html`, accepts `.webp`, `.jpg`).
+  - Directory traversal prevention in `/api/v1/storage/files/:filename`.
+  - Rate limiter enforcement.
 
-1. Onboarding → model "download" (demo provider, full UI flow with confirmation) → scan the fixture
-   photo → structured result → save → history → create + complete care task → streak and
-   today's count (and re-completing doesn't double count) → export JSON and validate its content
-   → reload → data persists.
-2. Simulated inference failure → error shown, nothing saved.
-3. Non-image upload rejected.
-4. Offline: service worker controls the page, context goes offline, reload → history, care task
-   creation and explorer offline notice all work.
-5. Every primary destination reachable on mobile and desktop; deep-route refresh (SPA fallback).
-6. Explorer shows OSM attribution and makes **zero** geolocation calls without a user action.
+### Running Server Tests:
+```bash
+npm --prefix server run test
+```
 
-## Manual verification of real AI in a browser (per release)
+---
 
-CI never downloads the model. Before a release, on at least one laptop and one Android phone:
+## 3. Client Test Suite (`client/src/`)
 
-1. `npm run build && npm run preview` (or the deployed HTTPS URL).
-2. Settings → AI model: confirm the size shown, download, watch progress reach 100%, status
-   "AI ready offline". Note whether it runs on GPU (WebGPU) or CPU.
-3. Scan `tests/fixtures/tomato-early-blight.jpg` (or a real leaf). Expect a structured result with
-   visible signs; the condition name may be wrong — that is documented behaviour.
-4. DevTools → Network → Offline → reload → scan again: analysis must still work.
-5. Settings → *Delete downloaded model* → status returns to "AI not downloaded"; your
-   observations remain.
-6. Try Settings → Acceleration → CPU only and repeat step 3.
-7. Record device, browser, preset, device type (GPU/CPU) and total analysis time in the release notes.
+Client tests execute in a simulated browser environment powered by **jsdom** and **fake-indexeddb**:
 
-## CI
+### 3.1 Covered Scenarios
+- **Scanner & AI:**
+  - Model status detection and switching.
+  - Image capture, preview, and structured diagnostic rendering.
+  - Camera permission denial and fallback to file upload.
+  - Offline diagnosis queueing.
+- **Garden & Observations:**
+  - Adding, editing, and archiving plants.
+  - Observation timeline filtering by condition (`healthy`, `attention`, `critical`).
+  - Editing notes and confirming deletions.
+- **Care Tasks & Streaks:**
+  - Daily watering checklist rendering.
+  - Idempotent task completion (preventing duplicate counts for the same day).
+  - Streak calculation and calendar edge-case handling.
+- **Nature Explorer:**
+  - Leaflet map rendering with OpenStreetMap attribution.
+  - Ensuring zero geolocation API calls occur without user button click.
+- **Social Features:**
+  - Sending and accepting connection requests.
+  - Sharing observations with friends via `ShareModal`.
+  - Notifications inbox badge count and read status toggling.
 
-`.github/workflows/ci.yml` runs `npm ci`, lint, typecheck, unit/component tests, production build,
-`verify:model` (network check, no weights) and the Playwright suite (Chromium).
+### Running Client Tests:
+```bash
+npm --prefix client run test
+```
+
+---
+
+## 4. Pre-Commit / Pre-Deployment Full Check
+
+Before pushing code or deploying releases, execute the full check pipeline:
+
+```bash
+npm run check
+```
+This runs:
+1. `npm --prefix client run typecheck`
+2. `npm --prefix server run typecheck`
+3. `npm --prefix server run test`
+4. `npm --prefix client run test`
+5. `npm --prefix client run build`
+6. `npm --prefix server run build`
+
+All steps must succeed with exit code `0`.

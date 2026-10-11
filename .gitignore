@@ -14,6 +14,16 @@ dev-dist/
 .env
 .env.*
 !.env.example
+client/.env
+client/.env.*
+!client/.env.example
+server/.env
+server/.env.*
+!server/.env.example
+
+# Local storage uploads
+server/storage/uploads/*
+!server/storage/uploads/.gitkeep
 
 # Local model cache used by scripts/verify-model-inference.mjs
 .model-cache/

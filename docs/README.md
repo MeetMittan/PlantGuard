@@ -1,20 +1,30 @@
-# PlantGuard AI documentation
+# PlantGuard AI Documentation
 
-| Document | Contents |
-|---|---|
-| [REQUIREMENTS.md](REQUIREMENTS.md) | Product scope, feature status, **streak rules** |
-| [TECH_STACK.md](TECH_STACK.md) | Libraries, versions and why |
-| [ARCHITECTURE.md](ARCHITECTURE.md) | Diagram, module boundaries, data flows, failure handling |
-| [AI_MODEL.md](AI_MODEL.md) | Model choice, PaliGemma evaluation, sizes, licences, measured accuracy, cache lifecycle |
-| [AI_PROMPTS.md](AI_PROMPTS.md) | Question sequence, parsing, validation, uncertainty, examples |
-| [DATABASE_SCHEMA.md](DATABASE_SCHEMA.md) | IndexedDB tables, migrations, backup format |
-| [OFFLINE_PWA.md](OFFLINE_PWA.md) | What works offline, caching, eviction, updates, testing offline |
-| [MAPS_AND_GEOLOCATION.md](MAPS_AND_GEOLOCATION.md) | Tiles, attribution, usage policy, location privacy |
-| [ENVIRONMENT.md](ENVIRONMENT.md) | Every environment variable |
-| [SECURITY_AND_PRIVACY.md](SECURITY_AND_PRIVACY.md) | Data flows, risks, mitigations |
-| [UI_UX.md](UI_UX.md) | Design tokens, navigation, motion, accessibility |
-| [TESTING.md](TESTING.md) | Commands, coverage, manual AI verification |
-| [DEPLOYMENT.md](DEPLOYMENT.md) | Cloudflare Pages, GitHub Pages, verification, costs |
-| [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | Common problems and fixes |
-| [ROADMAP.md](ROADMAP.md) | Not-yet-implemented ideas |
-| [adr/](adr/) | Architecture decision records 0001–0004 |
+PlantGuard AI is an offline-first plant health journal and diagnostic companion. It combines client-side progressive web app (PWA) resilience with a high-performance Express backend powered by Google's Gemini Vision AI and MongoDB.
+
+## Documentation Index
+
+1. [Architecture Overview](file:///d:/PlantGuard/docs/ARCHITECTURE.md) - High-level monorepo design, data flow, client-server separation.
+2. [API Reference](file:///d:/PlantGuard/docs/API.md) - Complete REST API specification (`/api/v1/*`), request/response schemas, error formats.
+3. [Authentication & Authorization](file:///d:/PlantGuard/docs/AUTHENTICATION.md) - Argon2id password hashing, JWT access/refresh token rotation, session management, multi-tenant owner scoping.
+4. [Database & Mongoose](file:///d:/PlantGuard/docs/DATABASE.md) - MongoDB schema models, indexes, migrations, and seed scripts.
+5. [AI Vision Model & Inference](file:///d:/PlantGuard/docs/AI_MODEL.md) - Google Gemini Vision integration, prompt engineering, structured validation, rate limits, error fallbacks.
+6. [Offline & Delta Sync](file:///d:/PlantGuard/docs/OFFLINE_SYNC.md) - Local-first IndexedDB (Dexie) storage, outbox change tracking, bidirectional delta synchronization.
+7. [Maps & Privacy](file:///d:/PlantGuard/docs/MAPS_AND_PRIVACY.md) - Nature Explorer OpenStreetMap/Leaflet integration, location obfuscation, privacy controls.
+8. [Security & Production Hardening](file:///d:/PlantGuard/docs/SECURITY.md) - Helmet, CORS policies, rate limiters, input sanitization, zero-secret logging with Pino.
+9. [Deployment Guide](file:///d:/PlantGuard/docs/DEPLOYMENT.md) - Docker, Node.js production service, reverse proxies, environment variables.
+10. [Testing & Verification](file:///d:/PlantGuard/docs/TESTING.md) - Unit tests, integration tests, E2E verification, database connectivity tests.
+11. [Migration Guide](file:///d:/PlantGuard/docs/MIGRATION.md) - Step-by-step migration from on-device SmolVLM to Gemini cloud backend and monorepo structure.
+
+## Quick Start
+
+```bash
+# Install dependencies across all workspaces
+npm install
+
+# Start both frontend and backend concurrently
+npm run dev
+
+# Run comprehensive checks across both workspaces
+npm run check
+```
